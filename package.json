@@ -1,0 +1,15 @@
+{
+  "name": "futebol-fps-server",
+  "version": "1.0.0",
+  "description": "Servidor de salas e hospedagem da versão Web do Futebol FPS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
