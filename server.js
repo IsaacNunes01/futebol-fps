@@ -145,6 +145,70 @@ O servidor extrai o .zip sozinho ao iniciar.</p>
 <p><b>Arquivos do jogo (public/):</b></p><ul>${li(diag.files)}</ul>`;
 }
 
+// ------------------------------------------------------------ Downloads das versões instaláveis
+// /download/<plataforma>: serve public/downloads/<arquivo> se existir; senão redireciona para a
+// última Release do GitHub (variável DOWNLOADS_REPO = "usuario/repositorio"). iOS só existe pela
+// App Store / TestFlight (variável IOS_URL). /downloads.json diz o que está disponível.
+const DOWNLOAD_FILES = {
+  android: "futebol-fps-android.apk",
+  windows: "futebol-fps-windows.zip",
+  macos: "futebol-fps-macos.zip",
+  linux: "futebol-fps-linux.zip",
+};
+const DOWNLOADS_REPO = (process.env.DOWNLOADS_REPO || "").trim();
+const IOS_URL = (process.env.IOS_URL || "").trim();
+
+function downloadAvailable(platform) {
+  if (platform === "ios") return IOS_URL !== "";
+  const f = DOWNLOAD_FILES[platform];
+  if (!f) return false;
+  return DOWNLOADS_REPO !== "" || fs.existsSync(path.join(PUBLIC_DIR, "downloads", f));
+}
+
+function infoPage(res, en, title, body) {
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
+  res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:sans-serif;background:#1d4fb8;color:#fbf5e4;padding:24px;line-height:1.5;max-width:640px;margin:auto}
+h2{color:#f6e3a6}a{color:#f6e3a6}</style><h2>${title}</h2>${body}
+<p><a href="/">${en ? "Back to the game" : "Voltar ao jogo"}</a></p>`);
+}
+
+function handleDownload(req, res, url) {
+  const en = !String(req.headers["accept-language"] || "").toLowerCase().startsWith("pt");
+  if (url === "/downloads.json") {
+    const out = {};
+    for (const p of ["android", "ios", "windows", "macos", "linux"]) out[p] = downloadAvailable(p);
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-cache" });
+    return res.end(JSON.stringify(out));
+  }
+  const platform = url.slice("/download/".length).toLowerCase();
+  if (platform === "ios") {
+    if (IOS_URL) { res.writeHead(302, { Location: IOS_URL }); return res.end(); }
+    return infoPage(res, en, en ? "iPhone / iPad" : "iPhone / iPad", en
+      ? "<p>Apple only allows installing apps on iPhone and iPad through the App Store or TestFlight, so there is no file to download here.</p><p>You can play right now in <b>Safari</b>: open this site on your iPhone and tap Play.</p>"
+      : "<p>A Apple só permite instalar apps no iPhone e no iPad pela App Store ou pelo TestFlight, então não há arquivo para baixar aqui.</p><p>Você pode jogar agora mesmo pelo <b>Safari</b>: abra este site no iPhone e toque em Jogar.</p>");
+  }
+  const file = DOWNLOAD_FILES[platform];
+  if (!file) { res.writeHead(404); return res.end(); }
+  const local = path.join(PUBLIC_DIR, "downloads", file);
+  if (fs.existsSync(local)) {
+    res.writeHead(200, {
+      "Content-Type": platform === "android" ? "application/vnd.android.package-archive" : "application/zip",
+      "Content-Disposition": `attachment; filename="${file}"`,
+      "Content-Length": fs.statSync(local).size,
+    });
+    return fs.createReadStream(local).pipe(res);
+  }
+  if (DOWNLOADS_REPO) {
+    res.writeHead(302, { Location: `https://github.com/${DOWNLOADS_REPO}/releases/latest/download/${file}` });
+    return res.end();
+  }
+  return infoPage(res, en, en ? "Not available yet" : "Ainda não disponível", en
+    ? "<p>This version hasn't been published yet. Meanwhile, you can play in the browser.</p>"
+    : "<p>Esta versão ainda não foi publicada. Enquanto isso, dá para jogar no navegador.</p>");
+}
+
+
 // ------------------------------------------------------------ HTTP (arquivos do jogo)
 
 const server = http.createServer((req, res) => {
@@ -155,6 +219,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(400);
     return res.end();
   }
+  if (url === "/downloads.json" || url.startsWith("/download/")) return handleDownload(req, res, url);
   if (url === "/health") {
     res.writeHead(200, { "Content-Type": "text/plain" });
     return res.end("ok");
