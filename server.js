@@ -239,16 +239,50 @@ const server = http.createServer((req, res) => {
       res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
       return res.end("Arquivo não encontrado: " + url);
     }
+    // (Sem cabeçalhos de isolamento COOP/COEP: a exportação é sem threads e não precisa deles;
+    // no Safari do iPhone eles já causaram falha ao carregar o áudio.)
     res.writeHead(200, {
       "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
-      // Permitem também exportações Web com threads.
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
       "Cache-Control": "no-cache",
     });
+    if (url === "/index.html") data = Buffer.from(String(data).replace("</head>", DIAG_SCRIPT + "</head>"));
     res.end(data);
   });
 });
+
+// Diagnóstico na página do jogo: se algo falhar (por exemplo num iPhone), a mensagem aparece
+// na tela em vez de uma tela preta — dá para tirar um print e corrigir.
+const DIAG_SCRIPT = `<script>
+(function () {
+  var box = null, lines = [];
+  function show(msg) {
+    lines.push(msg);
+    var put = function () {
+      if (!box) {
+        box = document.createElement('div');
+        box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:3000;max-height:45%;overflow:auto;' +
+          'background:rgba(110,0,0,.92);color:#fff;font:13px/1.35 monospace;padding:10px;white-space:pre-wrap';
+        box.onclick = function () { box.remove(); box = null; lines = []; };
+        document.body.appendChild(box);
+      }
+      box.textContent = 'Problema ao abrir o jogo (toque para fechar):\n' + lines.join('\n') +
+        '\n\n' + navigator.userAgent;
+    };
+    if (document.body) put(); else document.addEventListener('DOMContentLoaded', put);
+  }
+  window.addEventListener('error', function (e) {
+    show('Erro: ' + (e.message || e) + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason; show('Erro: ' + (r && (r.message || r.toString())) );
+  });
+  try {
+    if (!document.createElement('canvas').getContext('webgl2'))
+      show('Este navegador não tem WebGL 2, que o jogo precisa. No iPhone, atualize para o iOS 15 ou mais novo.');
+  } catch (e) {}
+  if (typeof WebAssembly !== 'object') show('Este navegador não tem WebAssembly, que o jogo precisa.');
+})();
+</script>`;
 
 // ------------------------------------------------------------ Salas
 
