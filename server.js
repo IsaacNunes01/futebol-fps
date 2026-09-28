@@ -246,8 +246,15 @@ function relay(ws, data) {
   if (!room || data.length < 2) return;
   const out = Buffer.from(data); // cópia, para trocar o cabeçalho
   out.writeUInt16LE(ws.id, 0);
+  const target = data.readUInt16LE(0);
+  if (target === 0xffff) {
+    // Para todos da sala (voz): quem estiver com a conexão lenta perde o pacote, sem acumular.
+    for (const p of room.peers.values()) {
+      if (p !== ws && p.readyState === 1 && p.bufferedAmount < 256 * 1024) p.send(out, { binary: true });
+    }
+    return;
+  }
   if (room.host === ws) {
-    const target = data.readUInt16LE(0);
     if (target === 0) {
       for (const p of room.peers.values()) {
         // Não acumula estado para quem está com a conexão lenta.
