@@ -431,6 +431,16 @@ wss.on("connection", (ws) => {
         broadcastRoomUpdate(room);
         break;
       }
+      case "kick": {
+        // Só o anfitrião: tira da sala um jogador que ficou inativo (o bot assume a vaga).
+        const room = ws.room;
+        if (!room || room.host !== ws) break;
+        const peer = room.peers.get(Number(msg.id));
+        if (!peer || peer === ws) break;
+        send(peer, { type: "room_closed", message: "Você ficou inativo e saiu da partida." });
+        leaveRoom(peer);
+        break;
+      }
       case "leave":
         leaveRoom(ws);
         break;
@@ -450,7 +460,7 @@ setInterval(() => {
     ws.isAlive = false;
     ws.ping();
   }
-}, 30000);
+}, 10000);   // conexão morta (sem responder ao ping) cai em até ~20 s
 
 server.listen(PORT, () => {
   console.log(`Futebol FPS: http://localhost:${PORT}  (WebSocket em /ws)`);
