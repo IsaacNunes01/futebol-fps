@@ -287,6 +287,10 @@ const DIAG_SCRIPT = `<script>
 // ------------------------------------------------------------ Salas
 
 const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 256 * 1024 });
+wss.on("error", (err) => console.log("Erro no servidor WebSocket:", err.message));
+// Rede de segurança: um erro inesperado é registrado em vez de derrubar todas as salas.
+process.on("uncaughtException", (err) => console.log("Erro inesperado (servidor continua):", err));
+process.on("unhandledRejection", (err) => console.log("Promessa rejeitada (servidor continua):", err));
 const rooms = new Map(); // código -> sala
 let nextId = 1;
 
@@ -375,6 +379,12 @@ wss.on("connection", (ws) => {
   ws.room = null;
   ws.isAlive = true;
   ws.on("pong", () => (ws.isAlive = true));
+  // Pacote malformado ou conexão com problema: encerra SÓ esta conexão. (Sem isto, um erro de
+  // uma conexão derrubava o servidor inteiro, com todas as salas.)
+  ws.on("error", (err) => {
+    console.log(`Conexão ${ws.id ?? "?"} com erro (${err.code || err.message}); encerrando só ela.`);
+    try { ws.terminate(); } catch (e) {}
+  });
   send(ws, { type: "welcome", id: ws.id });
 
   ws.on("message", (data, isBinary) => {
